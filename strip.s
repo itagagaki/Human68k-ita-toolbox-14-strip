@@ -4,6 +4,8 @@
 * 1.0
 * Itagaki Fumihiko 06-Feb-93  ファイル引数に過剰な / があれば除去する
 * 1.1
+* Itagaki Fumihiko 01-Mar-93  バインドされているファイルをstripしないよう修正
+* 1.2
 *
 * Usage: strip [ -sSgp ] [ -- ] <ファイル> ...
 
@@ -176,7 +178,7 @@ strip_show:
 		addq.l	#4,a7
 		bra	exit_program
 *****************************************************************
-* strip - X形式の実行可能ファイルのシンボル情報を削除する
+* strip - Ｘファイルのシンボル情報を削除する
 *
 * CALL
 *      A0     ファイル名
@@ -227,13 +229,13 @@ strip_timestamp_ok:
 		bmi	strip_perror
 
 		cmp.l	d3,d0				*  64バイト読めなかったなら
-		bne	strip_not_x			*  X形式ではない
+		bne	strip_not_x			*  Ｘファイルではない
 
-		cmpi.b	#'H',0(a1)
-		bne	strip_not_x			*  X形式でない
+		cmpi.w	#'HU',0(a1)
+		bne	strip_not_x			*  Ｘファイルでない
 
-		cmpi.b	#'U',1(a1)
-		bne	strip_not_x			*  X形式でない
+		tst.l	$003c(a1)			*  バインドされているなら
+		bne	cannot_strip_boundfile		*  stripできない
 
 		move.l	$0020(a1),d4			*  SCD line number table
 		add.l	$0024(a1),d4			*  SCD information
@@ -335,8 +337,14 @@ strip_resume_breakflag:
 strip_doReturn:
 		rts
 
+
+cannot_strip_boundfile:
+		lea	msg_cannot_strip_boundfile(pc),a2
+		bra	strip_error
+
 strip_not_x:
 		lea	msg_not_x(pc),a2
+strip_error:
 		bsr	werror_myname_word_colon_msg
 		bra	strip_return
 
@@ -447,14 +455,17 @@ word_tease:			dc.b	'-tease',0
 msg_no_memory:			dc.b	'メモリが足りません',CR,LF,0
 msg_illegal_option:		dc.b	'不正なオプション -- ',0
 msg_too_few_args:		dc.b	'引数が足りません',0
-msg_not_x:			dc.b	'.Xタイプ実行可能形式ファイルではありません',0
+msg_not_x:			dc.b	'Ｘファイルではありません',0
+msg_cannot_strip_boundfile:	dc.b	'バインドされています',0
 msg_usage:			dc.b	CR,LF,'使用法:  strip [-sSgp] [--] <ファイル> ...'
 msg_newline:			dc.b	CR,LF,0
 msg_show:	dc.b	'strip tease〔show〕n. ストリップショー. おどり子が音楽に合わせながら衣裳をぬぎすてる演芸.',CR,LF,0
 *****************************************************************
 .bss
 
+.even
 buffer:			ds.b	64
+.even
 breakflag:		ds.w	1
 breakflag_changed:	ds.b	1
 
