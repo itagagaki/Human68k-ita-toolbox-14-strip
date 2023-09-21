@@ -6,8 +6,11 @@
 * 1.1
 * Itagaki Fumihiko 01-Mar-93  バインドされているファイルをstripしないよう修正
 * 1.2
+* Itagaki Fumihiko 04-Jan-94  埋め込みIDを修正
+* Itagaki Fumihiko 28-Aug-94  オプション -f を追加
+* 1.3
 *
-* Usage: strip [ -sSgp ] [ -- ] <ファイル> ...
+* Usage: strip [ -sSgpf ] [ -- ] <ファイル> ...
 
 .include doscall.h
 .include error.h
@@ -16,6 +19,7 @@
 .include chrcode.h
 
 .xref DecodeHUPAIR
+.xref getlnenv
 .xref strlen
 .xref strcmp
 .xref strfor1
@@ -25,7 +29,24 @@ STACKSIZE	equ	2048
 
 FLAG_p		equ	0
 FLAG_g		equ	1
+FLAG_f		equ	2
 
+LNDRV_O_CREATE		equ	4*2
+LNDRV_O_OPEN		equ	4*3
+LNDRV_O_DELETE		equ	4*4
+LNDRV_O_MKDIR		equ	4*5
+LNDRV_O_RMDIR		equ	4*6
+LNDRV_O_CHDIR		equ	4*7
+LNDRV_O_CHMOD		equ	4*8
+LNDRV_O_FILES		equ	4*9
+LNDRV_O_RENAME		equ	4*10
+LNDRV_O_NEWFILE		equ	4*11
+LNDRV_O_FATCHK		equ	4*12
+LNDRV_realpathcpy	equ	4*16
+LNDRV_LINK_FILES	equ	4*17
+LNDRV_OLD_LINK_FILES	equ	4*18
+LNDRV_link_nest_max	equ	4*19
+LNDRV_getrealpath	equ	4*20
 
 .text
 start:
@@ -53,6 +74,11 @@ start1:
 		bmi	insufficient_memory
 
 		movea.l	d0,a1				*  A1 := 引数並び格納エリアの先頭アドレス
+	*
+	*  lndrv が組み込まれているかどうかを検査する
+	*
+		bsr	getlnenv
+		move.l	d0,lndrv
 	*
 	*  引数をデコードし，解釈する
 	*
@@ -106,6 +132,10 @@ decode_opt_loop2:
 
 		cmp.b	#'s',d0
 		beq	clear_option
+
+		moveq	#FLAG_f,d1
+		cmp.b	#'f',d0
+		beq	set_option
 
 		lea	msg_illegal_option(pc),a0
 		bsr	werror_myname_and_msg
@@ -184,10 +214,60 @@ strip_show:
 *      A0     ファイル名
 *
 * RETURN
-*      D1-D4/A1-A2   破壊
+*      D1-D4/A1-A3   破壊
 *****************************************************************
 strip:
 		sf	breakflag_changed
+		sf	mode_changed
+		bsr	lgetmode
+		bmi	strip_perror
+
+		btst	#FLAG_f,d5
+		beq	strip_open
+
+		movea.l	a0,a3
+		btst	#MODEBIT_LNK,d0
+		beq	strip_chmod_relax
+
+		move.l	lndrv,d0
+		beq	strip_open
+
+		movea.l	d0,a2
+		movea.l	LNDRV_getrealpath(a2),a2
+		lea	refname(pc),a1
+		clr.l	-(a7)
+		DOS	_SUPER				*  スーパーバイザ・モードに切り換える
+		addq.l	#4,a7
+		move.l	d0,-(a7)			*  前の SSP の値
+		movem.l	d2-d7/a0-a1/a3-a6,-(a7)
+		move.l	a0,-(a7)
+		move.l	a1,-(a7)
+		jsr	(a2)
+		addq.l	#8,a7
+		movem.l	(a7)+,d2-d7/a0-a1/a3-a6
+		move.l	d0,d1
+		DOS	_SUPER				*  ユーザ・モードに戻す
+		addq.l	#4,a7
+		tst.l	d1
+		bmi	strip_open
+
+		exg	a0,a1
+		bsr	lgetmode
+		exg	a0,a1
+		bmi	strip_open
+
+		movea.l	a1,a3
+strip_chmod_relax:
+		move.b	d0,mode
+		and.b	#(MODEVAL_DIR|MODEVAL_VOL|MODEVAL_LNK|MODEVAL_ARC|MODEVAL_EXE|MODEVAL_HID),d0
+		cmp.b	mode,d0
+		beq	strip_open
+
+		exg	a0,a3
+		bsr	chmod
+		exg	a0,a3
+		st	mode_changed
+strip_open:
 		move.w	#2,-(a7)			*  読み書きモードで
 		move.l	a0,-(a7)			*  ファイルを
 		DOS	_OPEN				*  オープンする
@@ -195,28 +275,17 @@ strip:
 		move.l	d0,d1				*  D1.L : ファイル・ハンドル
 		bmi	strip_perror
 
-		*  キャラクタ・デバイスでないかどうか調べる
-		move.w	d1,-(a7)
-		clr.w	-(a7)
-		DOS	_IOCTRL
-		addq.l	#4,a7
-		tst.l	d0
-		bmi	strip_not_x
-
-		btst	#7,d0
-		bne	strip_not_x
-strip_dev_ok:
 		*  タイムスタンプを得る
-		btst	#0,d5
+		btst	#FLAG_p,d5
 		beq	strip_timestamp_ok
 
-		clr.l	-(a7)
-		move.w	d1,-(a7)
-		DOS	_FILEDATE
-		addq.l	#6,a7
-		move.l	d0,d2				*  D2.L : ファイルのタイム・スタンプ
-		cmp.l	#$ffff0000,d0
-		bhs	strip_perror
+			clr.l	-(a7)
+			move.w	d1,-(a7)
+			DOS	_FILEDATE
+			addq.l	#6,a7
+			move.l	d0,d2			*  D2.L : ファイルのタイム・スタンプ
+			cmp.l	#$ffff0000,d0
+			bhs	strip_perror
 strip_timestamp_ok:
 		lea	buffer(pc),a1
 		moveq	#64,d3				*  ヘッダ64バイトを読んでみる
@@ -311,7 +380,7 @@ not_clear_symbol:
 		bmi	strip_perror
 
 		*  タイムスタンプを再設定する
-		btst	#0,d5
+		btst	#FLAG_p,d5
 		beq	strip_return
 
 		move.l	d2,-(a7)
@@ -322,19 +391,27 @@ not_clear_symbol:
 		bhs	strip_perror
 strip_return:
 		tst.l	d1
-		bmi	strip_resume_breakflag
+		bmi	strip_close_ok
 
 		move.w	d1,-(a7)
 		DOS	_CLOSE
 		addq.l	#2,a7
-strip_resume_breakflag:
+strip_close_ok:
+		tst.b	mode_changed
+		beq	strip_resume_mode_ok
+
+		move.b	mode,d0
+		exg	a0,a3
+		bsr	chmod
+		exg	a0,a3
+strip_resume_mode_ok:
 		tst.b	breakflag_changed
-		beq	strip_doReturn
+		beq	strip_resume_breakflag_ok
 
 		move.w	breakflag,-(a7)
 		DOS	_BREAKCK
 		addq.l	#2,a7
-strip_doReturn:
+strip_resume_breakflag_ok:
 		rts
 
 
@@ -351,6 +428,38 @@ strip_error:
 strip_perror:
 		bsr	perror
 		bra	strip_return
+****************************************************************
+* lgetmode - ファイルの属性を得る
+*
+* CALL
+*      A0     パス名
+*
+* RETURN
+*      D0.L   OSリターンコード
+*             (正数ならば下位 1バイトがファイルの属性)
+*      CCR    TST.L D0
+****************************************************************
+****************************************************************
+* chmod - ファイルの属性を変更する
+*
+* CALL
+*      A0     パス名
+*      D0.B   変更するモード
+*
+* RETURN
+*      D0.L   OSリターンコード
+*      CCR    TST.L D0
+****************************************************************
+lgetmode:
+		moveq	#-1,d0
+chmod:
+		move.w	d0,-(a7)
+		move.l	a0,-(a7)
+		DOS	_CHMOD
+		addq.l	#6,a7
+		tst.l	d0
+chmod_done:
+		rts
 *****************************************************************
 werror_myname_and_msg:
 		move.l	a0,-(a7)
@@ -409,7 +518,7 @@ perror_2:
 .data
 
 	dc.b	0
-	dc.b	'## strip 1.1 ##  Copyright(C)1993 by Itagaki Fumihiko',0
+	dc.b	'## strip 1.3 ##  Copyright(C)1993-94 by Itagaki Fumihiko',0
 
 .even
 perror_table:
@@ -457,17 +566,21 @@ msg_illegal_option:		dc.b	'不正なオプション -- ',0
 msg_too_few_args:		dc.b	'引数が足りません',0
 msg_not_x:			dc.b	'Ｘファイルではありません',0
 msg_cannot_strip_boundfile:	dc.b	'バインドされています',0
-msg_usage:			dc.b	CR,LF,'使用法:  strip [-sSgp] [--] <ファイル> ...'
+msg_usage:			dc.b	CR,LF,'使用法:  strip [-sSgpf] [--] <ファイル> ...'
 msg_newline:			dc.b	CR,LF,0
 msg_show:	dc.b	'strip tease〔show〕n. ストリップショー. おどり子が音楽に合わせながら衣裳をぬぎすてる演芸.',CR,LF,0
 *****************************************************************
 .bss
 
 .even
-buffer:			ds.b	64
-.even
+lndrv:			ds.l	1
 breakflag:		ds.w	1
 breakflag_changed:	ds.b	1
+mode:			ds.b	1
+mode_changed:		ds.b	1
+refname:		ds.b	128
+.even
+buffer:			ds.b	64
 
 .even
 			ds.b	STACKSIZE

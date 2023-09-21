@@ -9,11 +9,11 @@ RM      = -rm -f
 INCLUDE = $(HOME)/fish/include
 
 DESTDIR   = A:/usr/ita
-BACKUPDIR = B:/strip/1.2
-RELEASE_ARCHIVE = STRIP12
-RELEASE_FILES = MANIFEST README ../NOTICE ../DIRECTORY ../HUPAIR CHANGES strip.1 strip.x
+BACKUPDIR = B:/strip/1.3
+RELEASE_ARCHIVE = STRIP13
+RELEASE_FILES = MANIFEST README ../NOTICE CHANGES strip.1 strip.x
 
-EXTLIB = $(HOME)/fish/lib/ita.l
+EXTLIB = ../lib/getlnenv.o $(HOME)/fish/lib/ita.l
 
 ###
 
