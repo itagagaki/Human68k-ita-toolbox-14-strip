@@ -2,6 +2,8 @@
 *
 * Itagaki Fumihiko 20-Jan-93  Create.
 * 1.0
+* Itagaki Fumihiko 06-Feb-93  ファイル引数に過剰な / があれば除去する
+* 1.1
 *
 * Usage: strip [ -sSgp ] [ -- ] <ファイル> ...
 
@@ -15,8 +17,9 @@
 .xref strlen
 .xref strcmp
 .xref strfor1
+.xref strip_excessive_slashes
 
-STACKSIZE	equ	256
+STACKSIZE	equ	2048
 
 FLAG_p		equ	0
 FLAG_g		equ	1
@@ -134,8 +137,13 @@ decode_opt_done:
 		addq.l	#2,a7
 		move.w	d0,breakflag
 strip_arg_loop:
-		bsr	strip
+		movea.l	a0,a1
 		bsr	strfor1
+		exg	a0,a1
+		bsr	strip_excessive_slashes
+		move.l	a1,-(a7)
+		bsr	strip
+		movea.l	(a7)+,a0
 		subq.l	#1,d7
 		bne	strip_arg_loop
 ****************
@@ -393,7 +401,7 @@ perror_2:
 .data
 
 	dc.b	0
-	dc.b	'## strip 1.0 ##  Copyright(C)1993 by Itagaki Fumihiko',0
+	dc.b	'## strip 1.1 ##  Copyright(C)1993 by Itagaki Fumihiko',0
 
 .even
 perror_table:
