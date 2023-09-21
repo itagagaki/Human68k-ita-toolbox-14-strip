@@ -1,10 +1,8 @@
-# Makefile for ITA TOOLBOX #? strip
+# Makefile for ITA TOOLBOX #14 strip
 
-AS	= \usr\pds\HAS.X -l -i $(INCLUDE) -d
-LK	= \usr\pds\hlk.x #-x
-CV      = -\bin\CV.X -r
-INSTALL = cp -up
-BACKUP  = cp -au
+AS	= HAS.X -i $(INCLUDE)
+LK	= hlk.x -x
+CV      = -CV.X -r
 CP      = cp
 RM      = -rm -f
 
@@ -12,8 +10,10 @@ INCLUDE = $(HOME)/fish/include
 
 DESTDIR   = A:/usr/ita
 BACKUPDIR = B:/strip/1.0
+RELEASE_ARCHIVE = STRIP10
+RELEASE_FILES = MANIFEST README ../NOTICE ../DIRECTORY ../HUPAIR CHANGES strip.1 strip.x
 
-EXTLIB = ../lib/getlnenv.o $(HOME)/fish/lib/ita.l
+EXTLIB = $(HOME)/fish/lib/ita.l
 
 ###
 
@@ -21,7 +21,7 @@ PROGRAM = strip.x
 
 ###
 
-.PHONY: all clean clobber install backup
+.PHONY: all clean clobber install release backup
 
 .TERMINAL: *.h *.s
 
@@ -42,13 +42,6 @@ clobber:: clean
 
 $(PROGRAM) : $(INCLUDE)/doscall.h $(INCLUDE)/chrcode.h $(EXTLIB)
 
-install::
-	$(INSTALL) $(PROGRAM) $(DESTDIR)
-
-backup::
-	fish -fc '$(BACKUP) * $(BACKUPDIR)'
-
-clean::
-	$(RM) $(PROGRAM)
+include ../Makefile.sub
 
 ###
